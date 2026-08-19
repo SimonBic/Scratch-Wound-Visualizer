@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QSpacerItem,
     QVBoxLayout,
     QWidget,
+    QButtonGroup,
+    QPushButton
 )
 
 
@@ -209,18 +211,105 @@ class ParameterPanel(QWidget):
 
 
 
+class ModeCard(QPushButton):
+    def __init__(self, title, subtitle, hint, parent=None):
+        super().__init__(parent)
+        self.setObjectName("modeCard")
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumSize(280, 190)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 22)
+        layout.setSpacing(8)
+
+        lbl_title = QLabel(title)
+        lbl_title.setObjectName("modeCardTitle")
+
+        lbl_sub = QLabel(subtitle)
+        lbl_sub.setObjectName("modeCardSubtitle")
+        lbl_sub.setWordWrap(True)
+
+        lbl_hint = QLabel(hint)
+        lbl_hint.setObjectName("modeCardHint")
+        lbl_hint.setWordWrap(True)
+
+        layout.addWidget(lbl_title)
+        layout.addWidget(lbl_sub)
+        layout.addStretch(1)
+        layout.addWidget(lbl_hint)
+
+
+        #Label, also Text, würde die klicks nicht durch lassen, deswegen wird hier festegelegt, dass 
+        #Die Labels keine Klicks verschlucken.
+        for lbl in (lbl_title, lbl_sub, lbl_hint):
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+
 class ImageArea(QFrame):
     #4/5 der Breite
+    mode_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("imageArea")
 
-        layout = QVBoxLayout(self)
-        hint = QLabel("Bildbereich")
-        hint.setObjectName("placeholderHint")
-        hint.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hint)
+
+        # hint.setObjectName("placeholderHint")
+        # hint.setAlignment(Qt.AlignCenter)
+    
+
+        self.card_single = ModeCard(
+            "Einzelner Versuch",
+            "Ein Versuchsaufbau mit Bidlern wie 24h, 48h usw.",
+            "",
+        )
+        self.card_batch = ModeCard(
+            "Mehrere Versuche",
+            "Ein Ordner mit mehreren Versuchen, je Versuch ein Unterordner.",
+            "",
+        )
+
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.group.addButton(self.card_single)
+        self.group.addButton(self.card_batch)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(40, 40, 40, 40)
+
+        outer.addStretch(1)
+
+        heading = QLabel("Was möchten Sie auswerten?")
+        heading.setObjectName("areaHeading")
+        heading.setAlignment(Qt.AlignCenter)
+        outer.addWidget(heading)
+
+        outer.addSpacing(28)
+
+        cards = QHBoxLayout()
+        cards.setSpacing(24)
+        cards.addStretch(1)
+        cards.addWidget(self.card_single)
+        cards.addWidget(self.card_batch)
+        cards.addStretch(1)
+        outer.addLayout(cards)
+
+        outer.addStretch(2)
+
+        self.card_single.clicked.connect(lambda: self._select("single"))
+        self.card_batch.clicked.connect(lambda: self._select("batch"))
+
+        self._mode = None
+
+    def _select(self, mode: str):
+        self._mode = mode
+        print(f"Debug: select: {self._mode}")
+        self.mode_changed.emit(mode)
+
+    def mode(self) -> str | None:
+        print(f"Debug: mode: {self._mode}")
+        return self._mode
 
 class MainWindow(QMainWindow):
 
