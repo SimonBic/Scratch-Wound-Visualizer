@@ -253,12 +253,7 @@ class ImageArea(QFrame):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("imageArea")
-
-
-        # hint.setObjectName("placeholderHint")
-        # hint.setAlignment(Qt.AlignCenter)
-    
-
+        
         self.card_single = ModeCard(
             "Einzelner Versuch",
             "Ein Versuchsaufbau mit Bidlern wie 24h, 48h usw.",
