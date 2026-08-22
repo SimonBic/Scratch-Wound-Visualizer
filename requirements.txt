@@ -2,3 +2,7 @@ PySide6
 tifffile
 numpy
 pathlib
+__future__
+re
+scikit-image
+scipy

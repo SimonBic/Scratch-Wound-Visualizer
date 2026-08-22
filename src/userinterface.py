@@ -384,7 +384,7 @@ class BatchPage(QWidget):
             "           1.tif   2.tif   3.tif\n"
             "       Versuch_02/\n"
             "           A.tif   B.tif   C.tif\n\n"
-            "Die Bilder werden je Versuch lexikografisch sortiert und in dieser "
+            "Die Bilder werden je Versuch lexikografischcd .. sortiert und in dieser "
             "Reihenfolge als Zeitpunkte gewertet."
         )
         erklaerung.setObjectName("structureHint")
