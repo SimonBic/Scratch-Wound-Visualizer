@@ -119,3 +119,62 @@ class DropField(QFrame):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._update_preview()
+
+    def clear_field(self):
+        self.path = None
+        self._pixmap = None
+        self.preview.clear()
+        self.label_dropfield.setText(f"Bild Nr.: {self.index} hier ablegen")
+        self.setProperty("state", "")
+        self._refresh_style()
+
+
+class FolderDropField(QFrame):
+    folderDropped = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.path = None
+        self.setAcceptDrops(True)
+        self.setObjectName("folderDrop")
+        self.setMinimumHeight(220)
+
+        self.label = QLabel("Ordner hier ablegen")
+        self.label.setObjectName("folderDropLabel")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setWordWrap(True)
+        self.label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(self.label)
+
+    def _is_folder(self, mime) -> bool:
+        if not mime.hasUrls():
+            return False
+        return Path(mime.urls()[0].toLocalFile()).is_dir()
+
+    def dragEnterEvent(self, event):
+        if self._is_folder(event.mimeData()):
+            event.acceptProposedAction()
+            self.setProperty("state", "hover")
+            self._refresh_style()
+
+    def dragLeaveEvent(self, event):
+        self.setProperty("state", "filled" if self.path else "")
+        self._refresh_style()
+
+    def dropEvent(self, event):
+        pfad = event.mimeData().urls()[0].toLocalFile()
+        self.set_path(pfad)
+        event.acceptProposedAction()
+
+    def set_path(self, path: str):
+        self.path = path
+        self.label.setText(Path(path).name)
+        self.setProperty("state", "filled")
+        self._refresh_style()
+        self.folderDropped.emit(path)
+
+    def _refresh_style(self):
+        self.style().unpolish(self)
+        self.style().polish(self)
