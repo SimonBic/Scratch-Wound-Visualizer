@@ -30,7 +30,7 @@ from dropfield import DropField, FolderDropField
 from scanner import scanne_versuche
 from skimage import io as skio
 from detect_scratch import detect_scratch_main
-from overlay import save_marked, save_combined, color_for
+from overlay import save_marked, save_combined, color_for, output_dir_for
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 LOGO = ASSETS / "logo.svg"
@@ -597,28 +597,31 @@ class MainWindow(QMainWindow):
         params = self.panel.values()
         self.panel.btn_start.setEnabled(False)
 
-        geschrieben = 0
+        written = 0
         for run_name, paths in runs:
+            # Zielordner aus dem Ordner der Bilder ableiten
+            target_dir = output_dir_for(paths[0].parent)
+
             masks = []
             for p in paths:
-                bild = skio.imread(str(p))
-                maske = detect_scratch_main(
-                    bild,
+                image = skio.imread(str(p))
+                mask = detect_scratch_main(
+                    image,
                     radius=params["variance_radius"],
                     threshold=params["threshold"],
                     saturated=params["saturated"],
                 )
-                masks.append(maske)
-                save_marked(p, maske, color_for(len(masks) - 1))
-                geschrieben += 1
+                masks.append(mask)
+                save_marked(p, mask, target_dir, color_for(len(masks) - 1))
+                written += 1
 
                 self.statusBar().showMessage(f"{run_name}: {p.name}")
                 QApplication.processEvents()
 
             if masks:
-                save_combined(paths[-1], masks)
-                geschrieben += 1
+                save_combined(paths[-1], masks, target_dir)
+                written += 1
 
         self.panel.btn_start.setEnabled(True)
         self.statusBar().showMessage(
-            f"Fertig: {len(runs)} Versuche, {geschrieben} Dateien geschrieben")
+            f"Fertig: {len(runs)} Versuche, {written} Dateien in *_marked")

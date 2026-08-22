@@ -15,6 +15,11 @@ TIMEPOINT_COLORS = [
     (60, 120, 220),
 ]
 
+def output_dir_for(source_dir: Path) -> Path:
+    source_dir = Path(source_dir)
+    target = source_dir.with_name(f"{source_dir.name}_marked")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 def color_for(index: int) -> tuple:
     return TIMEPOINT_COLORS[index % len(TIMEPOINT_COLORS)]
@@ -37,25 +42,21 @@ def draw_boundary(rgb: np.ndarray, mask: np.ndarray, color: tuple, thickness: in
     return result
 
 
-def save_marked(image_path: Path, mask: np.ndarray, color: tuple = (220, 50, 47), thickness: int = 3) -> Path:
+def save_marked(image_path: Path, mask: np.ndarray, target_dir: Path, color: tuple = (220, 50, 47), thickness: int = 3) -> Path:
     image_path = Path(image_path)
-    rgb = draw_boundary(to_rgb(skio.imread(str(image_path))),
-                        mask, color, thickness)
+    rgb = draw_boundary(to_rgb(skio.imread(str(image_path))), mask, color, thickness)
 
-    out = image_path.with_name(f"{image_path.stem}_marked.png")
+    out = Path(target_dir) / f"{image_path.stem}.tif"
     skio.imsave(str(out), rgb)
     return out
 
 
-def save_combined(last_image_path: Path, masks: list, thickness: int = 3, out_path: Path = None) -> Path:
-    last_image_path = Path(last_image_path)
+def save_combined(last_image_path: Path, masks: list, target_dir: Path, name: str = "_all_timepoints", thickness: int = 3) -> Path:
     rgb = to_rgb(skio.imread(str(last_image_path)))
 
     for i, mask in enumerate(masks):
         rgb = draw_boundary(rgb, mask, color_for(i), thickness)
 
-    if out_path is None:
-        out_path = last_image_path.with_name(
-            f"{last_image_path.parent.name}_overlay.png")
-    skio.imsave(str(out_path), rgb)
-    return out_path
+    out = Path(target_dir) / f"{name}.tif"
+    skio.imsave(str(out), rgb)
+    return out
