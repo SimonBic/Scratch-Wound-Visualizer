@@ -22,11 +22,15 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
     QSpinBox,
-    QGridLayout
+    QGridLayout,
+    QApplication
 )
 
 from dropfield import DropField, FolderDropField
 from scanner import scanne_versuche
+from skimage import io as skio
+from detect_scratch import detect_scratch_main
+from overlay import save_marked, save_combined, color_for
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 LOGO = ASSETS / "logo.svg"
@@ -77,6 +81,7 @@ class ParameterPanel(QWidget):
 
     parameters_changed = Signal(dict)
     field_count_changed = Signal(int)
+    analysis_requested = Signal()
     #Höhe des Bedienblocks
     CONTROLS_START = 1 / 3
     #Minimaler Abstand der Oberkante des Bedienblocks zum oberen Rand der Seitenspalte
@@ -100,6 +105,15 @@ class ParameterPanel(QWidget):
         layout.addWidget(self._build_variance_radius())
         layout.addSpacing(16)
         layout.addWidget(self._build_saturated())
+
+        self.btn_start = QPushButton("Auswertung starten")
+        self.btn_start.setObjectName("startButton")
+        self.btn_start.setCursor(Qt.PointingHandCursor)
+        self.btn_start.setMinimumHeight(40)
+        self.btn_start.clicked.connect(self.analysis_requested.emit)
+
+        layout.addSpacing(24)
+        layout.addWidget(self.btn_start)
 
         layout.addStretch(1)
 
@@ -516,6 +530,18 @@ class ImageArea(QFrame):
     def mode(self) -> str | None:
         return self._mode
 
+    def collect_runs(self) -> list:
+        if self._mode == "single":
+            paths = self.single_page.paths()
+            if not paths:
+                return []
+            return [(Path(paths[0]).parent.name, [Path(p) for p in paths])]
+
+        if self._mode == "batch":
+            return [(name, bilder) for name, bilder in self.batch_page.versuche]
+
+        return []
+
 class MainWindow(QMainWindow):
 
     def __init__(self):
@@ -552,6 +578,7 @@ class MainWindow(QMainWindow):
 
         self.panel.parameters_changed.connect(self._on_parameters_changed)
         self.panel.field_count_changed.connect(self.image_area.set_field_count)
+        self.panel.analysis_requested.connect(self.run_analysis)
         self.statusBar().showMessage("Bereit")
 
     def _on_parameters_changed(self, params: dict):
@@ -560,3 +587,38 @@ class MainWindow(QMainWindow):
             f"Radius {params['variance_radius']}  |  "
             f"Saturated {params['saturated']}"
         )
+
+    def run_analysis(self):
+        runs = self.image_area.collect_runs()
+        if not runs:
+            self.statusBar().showMessage("Keine Bilder ausgewählt.")
+            return
+
+        params = self.panel.values()
+        self.panel.btn_start.setEnabled(False)
+
+        geschrieben = 0
+        for run_name, paths in runs:
+            masks = []
+            for p in paths:
+                bild = skio.imread(str(p))
+                maske = detect_scratch_main(
+                    bild,
+                    radius=params["variance_radius"],
+                    threshold=params["threshold"],
+                    saturated=params["saturated"],
+                )
+                masks.append(maske)
+                save_marked(p, maske, color_for(len(masks) - 1))
+                geschrieben += 1
+
+                self.statusBar().showMessage(f"{run_name}: {p.name}")
+                QApplication.processEvents()
+
+            if masks:
+                save_combined(paths[-1], masks)
+                geschrieben += 1
+
+        self.panel.btn_start.setEnabled(True)
+        self.statusBar().showMessage(
+            f"Fertig: {len(runs)} Versuche, {geschrieben} Dateien geschrieben")
