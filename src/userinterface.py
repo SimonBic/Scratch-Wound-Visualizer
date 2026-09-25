@@ -19,18 +19,19 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QPushButton,
     QGridLayout,
-    QScrollArea,
     QStackedWidget,
     QSpinBox,
-    QGridLayout,
-    QApplication
+    QApplication,
+    QMessageBox,
 )
 
 from dropfield import DropField, FolderDropField
 from scanner import scanne_versuche
 from skimage import io as skio
 from detect_scratch import detect_scratch_main
-from overlay import save_marked, save_combined, color_for, output_dir_for
+from overlay import save_marked, save_combined, save_heatmap, HeatmapAverage, color_for, output_dir_for
+from measure import measure_rows, measure_width
+from excel_export import save_excel, save_batch_excel
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 LOGO = ASSETS / "logo.svg"
@@ -125,16 +126,6 @@ class ParameterPanel(QWidget):
             0, max(offset, 0), QSizePolicy.Minimum, QSizePolicy.Fixed
         )
         self.layout().invalidate()
-
-    def add_panel_field(self):
-        feld = DropField(len(self.panel_fields) + 1)
-        feld.setMinimumHeight(120)
-        self.panel_fields.append(feld)
-        self.field_layout.addWidget(feld)
-
-    def panel_paths(self) -> list[str]:
-        return [f.path for f in self.panel_fields if f.path]
-
 
     def _build_field_count(self) -> QWidget:
         box = QWidget()
@@ -370,6 +361,7 @@ class BatchPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.versuche = []
+        self.wurzel = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(40, 32, 40, 32)
@@ -398,8 +390,9 @@ class BatchPage(QWidget):
             "           1.tif   2.tif   3.tif\n"
             "       Versuch_02/\n"
             "           A.tif   B.tif   C.tif\n\n"
-            "Die Bilder werden je Versuch lexikografisch sortiert und in dieser "
-            "Reihenfolge als Zeitpunkte gewertet."
+            "Die Bilder werden je Versuch nach Namen sortiert (2 vor 10) und in "
+            "dieser Reihenfolge als Zeitpunkte gewertet. Ordner, die auf _marked "
+            "enden (Ergebnisse einer früheren Auswertung), werden übersprungen."
         )
         erklaerung.setObjectName("structureHint")
         outer.addWidget(erklaerung)
@@ -414,6 +407,7 @@ class BatchPage(QWidget):
         outer.addWidget(self.zusammenfassung)
 
     def _ordner_eingelesen(self, pfad: str):
+        self.wurzel = Path(pfad)
         self.versuche = scanne_versuche(pfad)
 
         if not self.versuche:
@@ -589,7 +583,8 @@ class MainWindow(QMainWindow):
         )
 
     def run_analysis(self):
-        runs = self.image_area.collect_runs()
+        # Versuche ohne Bilder (leere Unterordner) ueberspringen
+        runs = [(name, paths) for name, paths in self.image_area.collect_runs() if paths]
         if not runs:
             self.statusBar().showMessage("Keine Bilder ausgewählt.")
             return
@@ -597,13 +592,44 @@ class MainWindow(QMainWindow):
         params = self.panel.values()
         self.panel.btn_start.setEnabled(False)
 
+        # Ohne try/finally bliebe der Button nach einem Fehler fuer immer grau,
+        # und unter Windows (pythonw) saehe man den Fehler gar nicht
+        try:
+            written = self._analyse(runs, params)
+        except PermissionError as exc:
+            self._show_error(
+                "Eine Datei konnte nicht geschrieben werden:\n"
+                f"{exc.filename}\n\n"
+                "Ist sie vielleicht noch in Excel oder einem Bildprogramm geöffnet? "
+                "Bitte schließen und die Auswertung nochmal starten."
+            )
+        except Exception as exc:
+            self._show_error(f"Die Auswertung ist abgebrochen:\n\n{type(exc).__name__}: {exc}")
+        else:
+            self.statusBar().showMessage(f"Fertig: {len(runs)} Versuche, {written} Dateien geschrieben")
+        finally:
+            self.panel.btn_start.setEnabled(True)
+
+    def _show_error(self, text: str):
+        self.statusBar().showMessage("Fehler bei der Auswertung")
+        QMessageBox.critical(self, "Fehler", text)
+
+    def _analyse(self, runs: list, params: dict) -> int:
+        batch = self.image_area.mode() == "batch"
+        results = []
+        heatmap_average = HeatmapAverage()
+
         written = 0
         for run_name, paths in runs:
             # Zielordner aus dem Ordner der Bilder ableiten
             target_dir = output_dir_for(paths[0].parent)
 
             masks = []
+            measurements = []
             for p in paths:
+                self.statusBar().showMessage(f"{run_name}: {p.name}")
+                QApplication.processEvents()
+
                 image = skio.imread(str(p))
                 mask = detect_scratch_main(
                     image,
@@ -611,17 +637,35 @@ class MainWindow(QMainWindow):
                     threshold=params["threshold"],
                     saturated=params["saturated"],
                 )
+                if masks and mask.shape != masks[0].shape:
+                    raise ValueError(
+                        f"{p.name} hat eine andere Bildgröße als das erste Bild von {run_name} "
+                        f"({mask.shape[1]}x{mask.shape[0]} statt {masks[0].shape[1]}x{masks[0].shape[0]})."
+                    )
                 masks.append(mask)
-                save_marked(p, mask, target_dir, color_for(len(masks) - 1))
+                if len(masks) == 1:
+                    # Messbereich einmal aus dem ersten Bild festlegen
+                    rows = measure_rows(mask, params["variance_radius"])
+                measurement = measure_width(mask, rows)
+                measurements.append(measurement)
+                written += len(save_marked(p, mask, measurement, target_dir, color_for(len(masks) - 1, len(paths))))
+
+            written += len(save_combined(paths[-1], masks, target_dir))
+            save_heatmap(paths[-1], masks, rows, target_dir)
+            written += 1
+            results.append((run_name, paths, measurements, rows))
+
+            if batch:
+                heatmap_average.add(masks, rows)
+            else:
+                # Ganzer Ordner: alles in eine gemeinsame Excel (siehe unten)
+                save_excel(run_name, paths, measurements, rows, target_dir)
                 written += 1
 
-                self.statusBar().showMessage(f"{run_name}: {p.name}")
-                QApplication.processEvents()
+        if batch:
+            wurzel = self.image_area.batch_page.wurzel
+            save_batch_excel(results, wurzel / f"{wurzel.name}_auswertung.xlsx")
+            heatmap_average.save(wurzel / f"{wurzel.name}_gesamt_heatmap.png")
+            written += 2
 
-            if masks:
-                save_combined(paths[-1], masks, target_dir)
-                written += 1
-
-        self.panel.btn_start.setEnabled(True)
-        self.statusBar().showMessage(
-            f"Fertig: {len(runs)} Versuche, {written} Dateien in *_marked")
+        return written

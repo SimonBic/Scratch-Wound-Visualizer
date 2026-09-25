@@ -1,7 +1,10 @@
+et_xmlfile==2.0.0
+imagecodecs==2026.8.16
 ImageIO==2.37.3
 lazy-loader==0.5
 networkx==3.6.1
 numpy==2.4.6
+openpyxl==3.1.5
 packaging==25.0
 pillow==12.3.0
 PySide6==6.11.1
@@ -11,4 +14,3 @@ scikit-image==0.26.0
 scipy==1.18.0
 shiboken6==6.11.1
 tifffile==2026.8.16
-

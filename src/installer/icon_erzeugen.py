@@ -1,8 +1,7 @@
 
 # Rendert das logo.svg in die Icon-Formate, die Windows (.ico) und
 # macOS (.iconset -> .icns) brauchen. Laeuft ueber die VENV-Python,
-# weil dort PySide6 installiert ist - Qt kann SVGs selbst rendern,
-# dadurch braucht es kein separates logo.png und kein Pillow.
+# weil dort PySide6 installiert ist 
 
 # Aufruf (macht install.py automatisch):
 #     python icon_erzeugen.py ico     <logo.svg> <ziel.ico>

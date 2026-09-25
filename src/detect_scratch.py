@@ -39,7 +39,7 @@ def to_grayscale(bild: np.ndarray) -> np.ndarray:
 #1:
 def enhance_contrast(grau: np.ndarray, saturated: float = 0.01) -> np.ndarray:
     # saturated ist der Prozentsatz der Pixel, der insgesamt abgeschnitten
-    # wird -- je zur Hälfte am unteren und oberen Ende. Richtwert 0.001-0.4.
+    # wird je zur Hälfte am unteren und oberen Ende. Richtwert 0.001-0.4.
     # Höherer Wert = stärkerer Kontrast = am Ende kleinere erkannte Fläche.'
 
     if saturated <= 0:
@@ -64,8 +64,7 @@ def variance_filter(bild: np.ndarray, radius: int = 20) -> np.ndarray:
     scheibe /= scheibe.sum()
 
     def falten(x):
-        # fftconvolve füllt implizit mit Nullen auf,würde die Ränder
-        # verfälschen => spiegeln und danach zurückschneiden.
+        
         gepolstert = np.pad(x, radius, mode="reflect")
         return fftconvolve(gepolstert, scheibe, mode="same")[radius:-radius, radius:-radius]
 
@@ -104,7 +103,8 @@ def remove_small_objects(mask: np.ndarray, min_area: int = 100) -> np.ndarray:
 
 #5.
 
-def largest_region(mask: np.ndarray) -> np.ndarray:
+def scratch_region(mask: np.ndarray, min_share: float = 0.05) -> np.ndarray:
+    
     labels, count = ndimage.label(mask)
     if count == 0:
         return np.zeros_like(mask, dtype=bool)
@@ -122,7 +122,15 @@ def largest_region(mask: np.ndarray) -> np.ndarray:
     else:
         chosen = ids[np.argmax(sizes)]
 
-    return labels == chosen
+    main_cols = np.flatnonzero((labels == chosen).any(axis=0))
+    col_lo, col_hi = main_cols[0], main_cols[-1]
+    centers = ndimage.center_of_mass(mask, labels, index=ids)
+
+    keep = [
+        i for i, size, (_, col) in zip(ids, sizes, centers)
+        if i == chosen or (size >= min_share * sizes[chosen - 1] and col_lo <= col <= col_hi)
+    ]
+    return np.isin(labels, keep)
 
 #Main:
 def detect_scratch_main(
@@ -139,4 +147,4 @@ def detect_scratch_main(
     mask = find_by_threshold(variance, threshold)
     mask = fill_holes(mask)
     mask = remove_small_objects(mask, min_area)
-    return largest_region(mask)
+    return scratch_region(mask)

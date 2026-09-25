@@ -10,7 +10,7 @@
 # Aufruf:
 #     Windows: python src\installer\install.py
 #     macOS:   python3 src/installer/install.py
-#     Linux:   bash src/installer/install.sh   (ruft diese Datei auf)
+#     Linux:   bash src/installer/install.sh 
 
 import os
 import platform

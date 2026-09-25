@@ -1,3 +1,4 @@
+#!/bin/bash
 #Installer für Linux, Terminal, cd bis zum installer, dann ausführen:
 #bash ./install.sh
 

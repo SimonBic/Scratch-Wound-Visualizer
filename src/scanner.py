@@ -21,6 +21,9 @@ def scanne_versuche(wurzel: str) -> list[tuple[str, list[Path]]]:
     for unterordner in sorted(basis.iterdir(), key=natuerlicher_schluessel):
         if not unterordner.is_dir():
             continue
+        # Ausgabeordner einer frueheren Auswertung nicht nochmal auswerten
+        if unterordner.name.endswith("_marked"):
+            continue
         bilder = [f for f in unterordner.iterdir()
                   if f.is_file() and f.suffix.lower() in SUFFIXE]
         bilder.sort(key=natuerlicher_schluessel)

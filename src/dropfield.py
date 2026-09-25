@@ -3,6 +3,8 @@ from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout
 from PySide6.QtGui import QImageReader, QPixmap, QImage
 from pathlib import Path
 
+from scanner import SUFFIXE
+
 class DropField(QFrame):
     fileDropped = Signal(str)   # gibt den Pfad nach oben weiter
 
@@ -22,34 +24,26 @@ class DropField(QFrame):
         self.label_dropfield = QLabel(f"Bild Nr.: {index} hier ablegen") 
         self.label_dropfield.setAlignment(Qt.AlignCenter)
         self.box_layout_dropfield = QVBoxLayout(self)
-        self.box_layout_dropfield.addWidget(self.label_dropfield)
 
         self.box_layout_dropfield.addWidget(self.preview, 1)     
         self.box_layout_dropfield.addWidget(self.label_dropfield) # Dateiname darunter
         self.setMinimumSize(192, 108)
 
     def dragEnterEvent(self, event):
-        if self._is_tiff(event.mimeData()):
+        if self._is_image(event.mimeData()):
             event.acceptProposedAction()
             self.setProperty("state", "hover")
             self._refresh_style()
 
-    def _is_tiff(self, mime) -> bool:
+    def _is_image(self, mime) -> bool:
+        #Gleiche Dateitypen wie im Ordner-Modus (scanner.py)
         if not mime.hasUrls():
             return False
-        pfad = mime.urls()[0].toLocalFile()
-        return pfad.lower().endswith((".tif", ".tiff"))
+        return Path(mime.urls()[0].toLocalFile()).suffix.lower() in SUFFIXE
 
     def set_path(self, path: str):
         self.path = path
-        self.label_dropfield.setText(Path(path).name)
-        self.setProperty("state", "filled")
-        self._refresh_style()
-        self.fileDropped.emit(path)
-
         self._pixmap = self._load_preview(path)
-
-        
 
         if self._pixmap:
             self._update_preview()
