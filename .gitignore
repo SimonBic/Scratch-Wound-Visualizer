@@ -5,3 +5,8 @@ __pycache__/
 *.tif
 *.tiff
 *.csv
+
+# Vom Installer erzeugte Icons
+src/installer/logo.ico
+src/installer/logo.icns
+src/installer/logo.iconset/
