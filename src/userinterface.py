@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QDoubleValidator, QIntValidator #Für die EIngabefelder, zb dass man keine Buchstaben eingeben kann
+from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtGui import QDesktopServices, QDoubleValidator, QIntValidator #Für die EIngabefelder, zb dass man keine Buchstaben eingeben kann
 from PySide6.QtSvgWidgets import QSvgWidget #Für das Logo
 from PySide6.QtWidgets import (
     QFrame,
@@ -23,6 +23,10 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QApplication,
     QMessageBox,
+    QDialog,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 
 from dropfield import DropField, FolderDropField
@@ -32,6 +36,7 @@ from detect_scratch import detect_scratch_main
 from overlay import save_marked, save_combined, save_heatmap, HeatmapAverage, color_for, output_dir_for
 from measure import measure_rows, measure_width
 from excel_export import save_excel, save_batch_excel
+from openpyxl import load_workbook
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 LOGO = ASSETS / "logo.svg"
@@ -591,6 +596,7 @@ class MainWindow(QMainWindow):
 
         params = self.panel.values()
         self.panel.btn_start.setEnabled(False)
+        self._batch_excel = None
 
         # Ohne try/finally bliebe der Button nach einem Fehler fuer immer grau,
         # und unter Windows (pythonw) saehe man den Fehler gar nicht
@@ -607,12 +613,68 @@ class MainWindow(QMainWindow):
             self._show_error(f"Die Auswertung ist abgebrochen:\n\n{type(exc).__name__}: {exc}")
         else:
             self.statusBar().showMessage(f"Fertig: {len(runs)} Versuche, {written} Dateien geschrieben")
+            if self._batch_excel is not None:
+                self._excel_zeigen(self._batch_excel)
         finally:
             self.panel.btn_start.setEnabled(True)
 
     def _show_error(self, text: str):
         self.statusBar().showMessage("Fehler bei der Auswertung")
         QMessageBox.critical(self, "Fehler", text)
+
+    def _excel_zeigen(self, xlsx_pfad: Path):
+        #Gesamt-Excel in einem Nebenfenster anzeigen, mit Buttons zum
+        #Oeffnen in Excel und zum Kopieren des Pfads (wie im Fingerscan-Viewer)
+        blatt = load_workbook(xlsx_pfad, read_only=True, data_only=True).active
+        zeilen = [["" if w is None else str(w) for w in zeile]
+                  for zeile in blatt.iter_rows(values_only=True)]
+        # Leerzeilen sind in der Excel nur Platz fuer die Graphen
+        zeilen = [z for z in zeilen if any(z)]
+
+        # Immer nur ein Fenster, sonst stapeln sie sich bei jeder Auswertung
+        if getattr(self, "_excel_fenster", None) is not None:
+            self._excel_fenster.close()
+        fenster = QDialog(self)
+        fenster.setWindowTitle(xlsx_pfad.name)
+        self._excel_fenster = fenster
+        layout = QVBoxLayout(fenster)
+
+        pfad_label = QLabel(str(xlsx_pfad))
+        pfad_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(pfad_label)
+
+        tabelle = QTableWidget(len(zeilen), max((len(z) for z in zeilen), default=0))
+        tabelle.setEditTriggers(QTableWidget.NoEditTriggers)
+        tabelle.horizontalHeader().setVisible(False)
+        tabelle.verticalHeader().setVisible(False)
+        for r, zeile in enumerate(zeilen):
+            for c, wert in enumerate(zeile):
+                item = QTableWidgetItem(wert)
+                item.setToolTip(wert)
+                tabelle.setItem(r, c, item)
+        # Die langen Hinweistexte stehen in Spalte A - nicht auf Inhalt
+        # strecken, sonst wird die Tabelle kilometerbreit
+        tabelle.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        tabelle.resizeColumnsToContents()
+        tabelle.setColumnWidth(0, min(tabelle.columnWidth(0), 120))
+        layout.addWidget(tabelle)
+
+        buttons = QHBoxLayout()
+        oeffnen = QPushButton("In Excel öffnen")
+        oeffnen.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(xlsx_pfad))))
+        kopieren = QPushButton("Pfad kopieren")
+
+        def pfad_kopieren():
+            QApplication.clipboard().setText(str(xlsx_pfad))
+            kopieren.setText("Kopiert!")
+
+        kopieren.clicked.connect(pfad_kopieren)
+        buttons.addWidget(oeffnen)
+        buttons.addWidget(kopieren)
+        layout.addLayout(buttons)
+
+        fenster.resize(900, 600)
+        fenster.show()
 
     def _analyse(self, runs: list, params: dict) -> int:
         batch = self.image_area.mode() == "batch"
@@ -664,8 +726,9 @@ class MainWindow(QMainWindow):
 
         if batch:
             wurzel = self.image_area.batch_page.wurzel
-            save_batch_excel(results, wurzel / f"{wurzel.name}_auswertung.xlsx")
+            self._batch_excel = save_batch_excel(results, wurzel / f"{wurzel.name}_auswertung.xlsx")
             heatmap_average.save(wurzel / f"{wurzel.name}_gesamt_heatmap.png")
-            written += 2
+            heatmap_average.save(wurzel / f"{wurzel.name}_gesamt_heatmap_linien.png", with_lines=True)
+            written += 3
 
         return written

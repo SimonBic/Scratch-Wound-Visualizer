@@ -260,12 +260,16 @@ class HeatmapAverage:
         self.max_timepoints = max(self.max_timepoints, len(masks))
         self.timepoint_counts.add(len(masks))
 
+    def mean(self) -> np.ndarray:
+        #Durchschnittlicher Anteil je Pixel, NaN wo keine Daten sind
+        return np.divide(self.total, self.count, out=np.full(self.total.shape, np.nan), where=self.count > 0)
+
     def colorize(self) -> np.ndarray:
         #Mittelwert je Pixel -> Farbverlauf zwischen den Zeitpunkt-Farben
         n = self.max_timepoints
         stops = np.array(palette(HEATMAP_COLORS, n) + [OPEN_COLOR], dtype=np.float32)
 
-        mean = np.divide(self.total, self.count, out=np.full(self.total.shape, np.nan), where=self.count > 0)
+        mean = self.mean()
         v = np.clip(np.nan_to_num(mean, nan=0.0) * n, 0, n)
         lower = np.minimum(np.floor(v).astype(int), n - 1)
         frac = (v - lower)[..., None]
@@ -274,20 +278,59 @@ class HeatmapAverage:
         rgb[self.count == 0] = 255  # keine Daten: weiss
         return rgb.round().astype(np.uint8)
 
-    def save(self, out_path: Path) -> Path | None:
+    def average_lines(self) -> list:
+        #Durchschnittliche Wundgrenze je Zeitpunkt: Grenze der Flaeche, die im
+        #Mittel zu diesem Zeitpunkt noch offen ist. Ein Pixel mit Mittelwert
+        #t + 0.5 (in Zeitpunkten) liegt genau zwischen "zu bei t" und "zu bei
+        #t + 1" - dort verlaeuft die Linie. Nur waagrecht gesucht, sonst
+        #entstehen oben/unten am Rand der Messzeilen falsche Querlinien.
+        n = self.max_timepoints
+        v = np.nan_to_num(self.mean(), nan=0.0) * n
+        thickness = max(2, v.shape[1] // 400)
+        horizontal = np.ones((1, 3), dtype=bool)
+
+        lines = []
+        for t in range(n):
+            wound = v > t + 0.5
+            eroded = ndimage.binary_erosion(wound, structure=horizontal, iterations=thickness, border_value=1)
+            lines.append(wound & ~eroded)
+        return lines
+
+    def save(self, out_path: Path, with_lines: bool = False) -> Path | None:
+        #with_lines: zusaetzlich die durchschnittliche Wundgrenze je Zeitpunkt
+        #als weisse Linie einzeichnen (siehe average_lines)
         if self.total is None:
             return None
         from PIL import Image, ImageDraw, ImageFont
 
-        bild = Image.fromarray(self.colorize())
+        rgb = self.colorize()
+        if with_lines:
+            lines = self.average_lines()
+            for line in lines:
+                rgb[line] = DISTANCE_LINE_COLOR
+        bild = Image.fromarray(rgb)
         font = ImageFont.load_default(size=max(20, bild.width // 90))
         pad = bild.width // 60
         bar_h = bild.height // 25
-        legend_h = pad * 3 + bar_h + font.size * 5
+        legend_h = pad * 3 + bar_h + font.size * (6 if with_lines else 5)
 
         canvas = Image.new("RGB", (bild.width, bild.height + legend_h), "white")
         canvas.paste(bild, (0, 0))
         draw = ImageDraw.Draw(canvas)
+
+        if with_lines:
+            # Beschriftung links neben der Linie, je Zeitpunkt auf anderer
+            # Hoehe, damit sich nahe beieinander liegende Linien nicht ueberdecken
+            data_rows = np.flatnonzero((self.count > 0).any(axis=1))
+            for t, line in enumerate(lines):
+                if data_rows.size == 0:
+                    break
+                row = int(data_rows[0] + (t + 1) / (len(lines) + 1) * (data_rows[-1] - data_rows[0]))
+                cols = np.flatnonzero(line[row])
+                if cols.size == 0:
+                    continue
+                draw.text((int(cols[0]) - pad // 2, row), f"Time point {t + 1}", fill="white", font=font, anchor="rm",
+                          stroke_width=max(1, font.size // 12), stroke_fill="black")
 
         # Farbskala: gleicher Verlauf wie im Bild
         n = self.max_timepoints
@@ -321,6 +364,13 @@ class HeatmapAverage:
                 (pad, y0 + bar_h + pad + font.size * 3 + 4),
                 "Achtung: Die Versuche haben unterschiedlich viele Zeitpunkte "
                 f"({', '.join(map(str, sorted(self.timepoint_counts)))}), sie wurden anteilig umgerechnet.",
+                fill="black", font=font,
+            )
+
+        if with_lines:
+            draw.text(
+                (pad, y0 + bar_h + pad + font.size * (4 if len(self.timepoint_counts) > 1 else 3) + 8),
+                "Weisse Linien = durchschnittliche Wundgrenze je Zeitpunkt.",
                 fill="black", font=font,
             )
 

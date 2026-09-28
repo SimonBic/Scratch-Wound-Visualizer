@@ -21,11 +21,11 @@ BAND_COLOR = "BCD4EC"   # hellblau fuer die Standardabweichung
 
 RUN_HEADER = [
     "Zeitpunkt", "Bild",
-    "Abstand Mittelwert (px)", "Abstand Max (px)", "Zeile Max",
+    "Abstand Mittelwert (px)", "Abstand Min (px)", "Zeile Min", "Abstand Max (px)", "Zeile Max",
     "Fläche (px)", "Fläche relativ zu Zeitpunkt 1 (%)",
 ]
-REL_COLUMN = 7  # Spalte G: Flaeche relativ
-BAND_COLUMN = 9  # Durchschnitt: Spalten I/J sind die Hilfsspalten fuers Band
+REL_COLUMN = 9  # Spalte I: Flaeche relativ
+BAND_COLUMN = 11  # Durchschnitt: Spalten K/L sind die Hilfsspalten fuers Band
 
 # Alles steht auf EINEM Blatt untereinander. Ein Graph ist ~9 cm hoch,
 # das sind knapp 18 Excel-Zeilen - so viel Platz braucht jeder Block mindestens.
@@ -93,7 +93,7 @@ def write_run(ws, start: int, run_name: str, image_paths: list, measurements: li
 
     first_row = start + 2
     for i, (path, m, rel) in enumerate(zip(image_paths, measurements, relative_areas(measurements))):
-        values = [i + 1, Path(path).name, round(m["mean"], 2), m["max"], m["row_max"], m["area"], rel]
+        values = [i + 1, Path(path).name, round(m["mean"], 2), m["min"], m["row_min"], m["max"], m["row_max"], m["area"], rel]
         for col, value in enumerate(values, start=1):
             ws.cell(row=first_row + i, column=col, value=value)
     last_row = first_row + len(measurements) - 1
@@ -106,7 +106,7 @@ def write_run(ws, start: int, run_name: str, image_paths: list, measurements: li
             value="Abstand = Breite des Spalts je Bildzeile, zugewachsene Zeilen zählen als 0.")
 
     if measurements:
-        ws.add_chart(line_chart(ws, f"{run_name}: Zuwachsen der Wunde", first_row, last_row), f"I{start}")
+        ws.add_chart(line_chart(ws, f"{run_name}: Zuwachsen der Wunde", first_row, last_row), f"K{start}")
 
     return start + max(MIN_BLOCK_ROWS, len(measurements) + 6)
 
@@ -117,7 +117,7 @@ def save_excel(run_name: str, image_paths: list, measurements: list, rows: np.nd
     ws = wb.active
     ws.title = "Auswertung"
     write_run(ws, 1, run_name, image_paths, measurements, rows)
-    set_widths(ws, [11, 22, 14, 12, 10, 13, 16])
+    set_widths(ws, [11, 22, 14, 12, 10, 12, 10, 13, 16])
 
     out = Path(target_dir) / f"{run_name}_auswertung.xlsx"
     wb.save(out)
@@ -133,6 +133,7 @@ def write_average(ws, start: int, results: list) -> int:
         "Zeitpunkt", "Anzahl Versuche",
         "Fläche relativ (%) Mittelwert", "Fläche relativ (%) Std.-Abw.",
         "Abstand Mittelwert (px) Mittelwert", "Abstand Mittelwert (px) Std.-Abw.",
+        "Abstand Min (px) Mittelwert", "Abstand Min (px) Std.-Abw.",
         "Abstand Max (px) Mittelwert", "Abstand Max (px) Std.-Abw.",
         # Hilfsspalten fuer das Band im Graphen
         "Band unten (Mittelwert − Std.-Abw.)", "Band Breite (2 × Std.-Abw.)",
@@ -155,7 +156,7 @@ def write_average(ws, start: int, results: list) -> int:
 
         rel_mean, rel_sd = mean_sd(rel)
         row = [t + 1, len(present), rel_mean, rel_sd]
-        for key in ("mean", "max"):
+        for key in ("mean", "min", "max"):
             row.extend(mean_sd([m[t][key] for m in present]))
 
         if rel_mean is None:
@@ -169,7 +170,7 @@ def write_average(ws, start: int, results: list) -> int:
                 cell.font = Font(color="808080")
 
     if n_points:
-        ws.add_chart(average_chart(ws, first_row, first_row + n_points - 1), f"L{start}")
+        ws.add_chart(average_chart(ws, first_row, first_row + n_points - 1), f"N{start}")
 
     return start + max(MIN_BLOCK_ROWS + 3, n_points + 3)
 
@@ -224,7 +225,7 @@ def save_batch_excel(results: list, out_path: Path) -> Path:
         row = write_run(ws, row, run_name, image_paths, measurements, rows)
 
     write_average(ws, row + 1, results)
-    set_widths(ws, [11, 22, 14, 14, 14, 14, 13, 13, 16, 14])
+    set_widths(ws, [11, 22, 14, 14, 14, 14, 13, 13, 13, 13, 16, 14])
 
     wb.save(out_path)
     return Path(out_path)
