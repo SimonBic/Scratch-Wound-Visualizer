@@ -35,8 +35,12 @@ def measure_rows(first_mask: np.ndarray, margin: int) -> np.ndarray:
 
 
 def measure_width(mask: np.ndarray, rows: np.ndarray) -> dict:
+    #Abstand je Zeile = aeusserster linker bis aeusserster rechter Wundrand.
+    #Ragt Zellrasen von der Seite in den Spalt (Einbuchtung), zaehlt er hier
+    #mit, bei der Flaeche (area) nicht - Mittelwert und Flaeche / Anzahl
+    #Messzeilen sind deshalb nicht genau gleich.
     #Mittelwert ueber alle Zeilen im Messbereich, zugewachsene Zeilen
-    #zaehlen als 0. Damit ist der Mittelwert = Flaeche / Anzahl Messzeilen.
+    #zaehlen als 0.
     left, right, width = row_edges(mask)
     row_index = np.flatnonzero(rows)
     width = width[rows]

@@ -20,6 +20,12 @@ from scipy import ndimage
 def to_grayscale(bild: np.ndarray) -> np.ndarray:
     bild = np.asarray(bild)
 
+    # Ein Kanal (H, B, 1) oder Grau + Alpha (H, B, 2): den Grauwert nehmen.
+    # Sonst wuerde das unten als mehrseitiges TIFF gelesen und nur die
+    # erste Bildzeile genommen
+    if bild.ndim == 3 and bild.shape[-1] in (1, 2):
+        bild = bild[..., 0]
+
     # Mehrseitiges TIFF: erste Ebene nehmen
     if bild.ndim == 3 and bild.shape[-1] not in (3, 4):
         bild = bild[0]

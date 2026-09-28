@@ -33,8 +33,9 @@ MIN_BLOCK_ROWS = 20
 
 
 def relative_areas(measurements: list) -> list:
+    #Ungerundet, damit der Durchschnitt nicht aus gerundeten Werten entsteht
     start = measurements[0]["area"] if measurements else 0
-    return [round(100.0 * m["area"] / start, 2) if start else None for m in measurements]
+    return [100.0 * m["area"] / start if start else None for m in measurements]
 
 
 def write_header(ws, row: int, header: list) -> None:
@@ -93,7 +94,8 @@ def write_run(ws, start: int, run_name: str, image_paths: list, measurements: li
 
     first_row = start + 2
     for i, (path, m, rel) in enumerate(zip(image_paths, measurements, relative_areas(measurements))):
-        values = [i + 1, Path(path).name, round(m["mean"], 2), m["min"], m["row_min"], m["max"], m["row_max"], m["area"], rel]
+        values = [i + 1, Path(path).name, round(m["mean"], 2), m["min"], m["row_min"], m["max"], m["row_max"], m["area"],
+                  None if rel is None else round(rel, 2)]
         for col, value in enumerate(values, start=1):
             ws.cell(row=first_row + i, column=col, value=value)
     last_row = first_row + len(measurements) - 1
@@ -103,7 +105,8 @@ def write_run(ws, start: int, run_name: str, image_paths: list, measurements: li
                   "im ersten Bild keine Wunde erkannt wurde (z.B. dunkler Rand, Linie quer durch den Spalt), "
                   "plus ein Sicherheitsabstand.")
     ws.cell(row=last_row + 3, column=1,
-            value="Abstand = Breite des Spalts je Bildzeile, zugewachsene Zeilen zählen als 0.")
+            value="Abstand = Abstand vom äußersten linken zum äußersten rechten Wundrand je Bildzeile, "
+                  "zugewachsene Zeilen zählen als 0. Zeilennummern zählen ab 0 (oberste Bildzeile).")
 
     if measurements:
         ws.add_chart(line_chart(ws, f"{run_name}: Zuwachsen der Wunde", first_row, last_row), f"K{start}")
